@@ -1,0 +1,209 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isBoundedStringArray(arr, maxItems) {
+      return arr is list && arr.size() <= maxItems && (
+        arr.size() == 0 || (arr[0] is string && arr[0].size() >= 1 && arr[0].size() <= 64)
+      );
+    }
+
+    // Validation Blueprint: UserProfile
+    function isValidUserProfile(data) {
+      return data.keys().hasAll([
+        'uid',
+        'displayName',
+        'learningTrack',
+        'xp',
+        'streakDays',
+        'cardsMastered',
+        'quizzesCompleted',
+        'completedNodeIds',
+        'savedTutorialIds',
+        'reminderEnabled',
+        'reminderTime',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'uid',
+        'displayName',
+        'learningTrack',
+        'xp',
+        'streakDays',
+        'cardsMastered',
+        'quizzesCompleted',
+        'completedNodeIds',
+        'savedTutorialIds',
+        'reminderEnabled',
+        'reminderTime',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.uid == request.auth.uid &&
+      data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+      data.learningTrack is string && data.learningTrack.size() <= 20 && data.learningTrack in ['general', 'accounting', 'finance', 'markets'] &&
+      data.xp is int && data.xp >= 0 && data.xp <= 10000000 &&
+      data.streakDays is int && data.streakDays >= 0 && data.streakDays <= 10000 &&
+      data.cardsMastered is int && data.cardsMastered >= 0 && data.cardsMastered <= 10000 &&
+      data.quizzesCompleted is int && data.quizzesCompleted >= 0 && data.quizzesCompleted <= 100000 &&
+      isBoundedStringArray(data.completedNodeIds, 50) &&
+      isBoundedStringArray(data.savedTutorialIds, 50) &&
+      data.reminderEnabled is bool &&
+      data.reminderTime is string && data.reminderTime.size() >= 4 && data.reminderTime.size() <= 10 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    // Validation Blueprint: ForumPost
+    function isValidForumPost(data) {
+      return data.keys().hasAll([
+        'authorId',
+        'authorName',
+        'title',
+        'body',
+        'category',
+        'conceptTag',
+        'helpfulCount',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'authorId',
+        'authorName',
+        'title',
+        'body',
+        'category',
+        'conceptTag',
+        'helpfulCount',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.authorId is string && data.authorId.size() >= 1 && data.authorId.size() <= 128 && data.authorId.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80 &&
+      data.title is string && data.title.size() >= 3 && data.title.size() <= 160 &&
+      data.body is string && data.body.size() >= 5 && data.body.size() <= 2000 &&
+      data.category is string && data.category.size() <= 20 && data.category in ['accounting', 'finance', 'markets', 'general'] &&
+      data.conceptTag is string && data.conceptTag.size() >= 2 && data.conceptTag.size() <= 60 &&
+      data.helpfulCount is int && data.helpfulCount >= 0 && data.helpfulCount <= 1000000 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    // Connection test document (read-only check for offline/online diagnostics)
+    match /test/connection {
+      allow get: if true;
+      allow list, create, update, delete: if false;
+    }
+
+    // Collection: /users/{userId}
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow list: if false;
+
+      allow create: if isVerifiedUser() &&
+        isValidId(userId) &&
+        request.auth.uid == userId &&
+        isValidUserProfile(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(userId) &&
+        request.auth.uid == userId &&
+        isValidUserProfile(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName',
+          'learningTrack',
+          'xp',
+          'streakDays',
+          'cardsMastered',
+          'quizzesCompleted',
+          'completedNodeIds',
+          'savedTutorialIds',
+          'reminderEnabled',
+          'reminderTime',
+          'updatedAt'
+        ]);
+
+      allow delete: if isVerifiedUser() && isValidId(userId) && request.auth.uid == userId;
+    }
+
+    // Collection: /forumPosts/{postId}
+    match /forumPosts/{postId} {
+      allow get: if isSignedIn() && isValidId(postId);
+      allow list: if isSignedIn() &&
+        resource.data.helpfulCount >= 0 &&
+        resource.data.category in ['accounting', 'finance', 'markets', 'general'];
+
+      allow create: if isVerifiedUser() &&
+        isValidId(postId) &&
+        isValidForumPost(incoming()) &&
+        incoming().authorId == request.auth.uid &&
+        incoming().helpfulCount == 0 &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(postId) &&
+        isValidForumPost(incoming()) &&
+        incoming().authorId == existing().authorId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Action 1: Author edits post content
+          (
+            existing().authorId == request.auth.uid &&
+            incoming().helpfulCount == existing().helpfulCount &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title',
+              'body',
+              'category',
+              'conceptTag',
+              'updatedAt'
+            ])
+          ) ||
+          // Action 2: Peer increments helpfulCount by +1
+          (
+            incoming().helpfulCount == existing().helpfulCount + 1 &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'helpfulCount',
+              'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(postId) &&
+        existing().authorId == request.auth.uid;
+    }
+  }
+}

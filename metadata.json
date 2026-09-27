@@ -1,0 +1,6 @@
+{
+  "name": "Memo Ledger — Open Finance & Accounting Studio",
+  "description": "Learn accounting, corporate finance, and market analysis with Memo the Owl using literal apples-to-apples explanations, spaced-repetition swipe flashcards, AI scenario quizzes, and offline study packs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

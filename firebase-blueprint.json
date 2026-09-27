@@ -1,0 +1,170 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Stores a student's personalized finance learning path, gamified progress, spaced repetition stats, offline saved tutorial IDs, and study reminder preferences.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The unique Firebase Auth UID of the student owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Student display name for progress and community attribution.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "learningTrack": {
+          "type": "string",
+          "description": "Selected primary field of study.",
+          "enum": ["general", "accounting", "finance", "markets"]
+        },
+        "xp": {
+          "type": "number",
+          "description": "Total experience points earned from flashcards and quizzes."
+        },
+        "streakDays": {
+          "type": "number",
+          "description": "Current consecutive days studied."
+        },
+        "cardsMastered": {
+          "type": "number",
+          "description": "Count of flashcards reaching SM-2 mastery interval."
+        },
+        "quizzesCompleted": {
+          "type": "number",
+          "description": "Total interactive scenario quizzes completed."
+        },
+        "completedNodeIds": {
+          "type": "array",
+          "description": "Bounded list of completed curriculum ladder node IDs (max 50)."
+        },
+        "savedTutorialIds": {
+          "type": "array",
+          "description": "Bounded list of tutorial IDs saved for offline study (max 50)."
+        },
+        "reminderEnabled": {
+          "type": "boolean",
+          "description": "Whether daily study notifications are enabled."
+        },
+        "reminderTime": {
+          "type": "string",
+          "description": "24-hour HH:MM study reminder time.",
+          "minLength": 4,
+          "maxLength": 10
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the student profile was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the student profile was last synced."
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "learningTrack",
+        "xp",
+        "streakDays",
+        "cardsMastered",
+        "quizzesCompleted",
+        "completedNodeIds",
+        "savedTutorialIds",
+        "reminderEnabled",
+        "reminderTime",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ForumPost": {
+      "title": "ForumPost",
+      "description": "A peer-support study question or literal concept explanation shared in the student community forum.",
+      "type": "object",
+      "properties": {
+        "authorId": {
+          "type": "string",
+          "description": "The Firebase Auth UID of the student who created the post.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Display name of the student author.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "title": {
+          "type": "string",
+          "description": "Concise question or topic title.",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "body": {
+          "type": "string",
+          "description": "Question details or apples-to-apples peer explanation.",
+          "minLength": 5,
+          "maxLength": 2000
+        },
+        "category": {
+          "type": "string",
+          "description": "Subject track of the discussion.",
+          "enum": ["accounting", "finance", "markets", "general"]
+        },
+        "conceptTag": {
+          "type": "string",
+          "description": "Specific curriculum concept tag (e.g., Prime Cost, Balance Sheet).",
+          "minLength": 2,
+          "maxLength": 60
+        },
+        "helpfulCount": {
+          "type": "number",
+          "description": "Number of peer helpful votes."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the post was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the post was last updated."
+        }
+      },
+      "required": [
+        "authorId",
+        "authorName",
+        "title",
+        "body",
+        "category",
+        "conceptTag",
+        "helpfulCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Private student study profile and cloud backup document owned strictly by {userId}."
+    },
+    "/forumPosts/{postId}": {
+      "schema": {
+        "$ref": "#/entities/ForumPost"
+      },
+      "description": "Peer support community forum posts accessible to authenticated learners."
+    }
+  }
+}

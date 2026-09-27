@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-canvas: #FAF7F2;
+    --bg-surface: #F3EFE6;
+    --bg-elevated: #FFFFFF;
+    --text-primary: #1E1B18;
+    --text-secondary: #5C5349;
+    --text-muted: #8A7E71;
+    --border-hairline: rgba(30, 27, 24, 0.09);
+    --accent-primary: #C86D3B;
+    --accent-sage: #2E6F40;
+    --accent-amber: #B87D14;
+  }
+
+  .dark {
+    --bg-canvas: #161412;
+    --bg-surface: #211E1B;
+    --bg-elevated: #2A2622;
+    --text-primary: #F5F0E6;
+    --text-secondary: #C4B9AA;
+    --text-muted: #8E8273;
+    --border-hairline: rgba(245, 240, 230, 0.11);
+    --accent-primary: #E08A54;
+    --accent-sage: #4CA965;
+    --accent-amber: #E5A93B;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    transition: background-color 180ms cubic-bezier(0.16, 1, 0.3, 1), color 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: 'Fraunces', Georgia, serif;
+    text-wrap: balance;
+  }
+
+  .font-mono, .tabular-nums {
+    font-family: 'IBM Plex Mono', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
