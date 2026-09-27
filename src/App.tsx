@@ -24,6 +24,7 @@ import {
   ArrowRight,
   DownloadCloud,
   Search,
+  Filter,
 } from 'lucide-react';
 import {
   auth,
@@ -55,6 +56,53 @@ import { PeerForumView } from './components/PeerForumView';
 import { OfflineIndicator, PWAInstallButton } from './hooks/usePWA';
 
 type ActiveTab = 'ladder' | 'flashcards' | 'scenarios' | 'forum' | 'analytics';
+
+export type MajorCurriculumFilter =
+  | 'all'
+  | 'accounting'
+  | 'finance'
+  | 'markets'
+  | 'foundations';
+
+export interface MajorFilterOption {
+  id: MajorCurriculumFilter;
+  label: string;
+  shortLabel: string;
+  description: string;
+}
+
+export const MAJOR_FILTER_OPTIONS: MajorFilterOption[] = [
+  {
+    id: 'all',
+    label: 'All Curriculum',
+    shortLabel: 'All',
+    description: 'All 16 levels & 250+ subtopics across accounting, finance & markets',
+  },
+  {
+    id: 'accounting',
+    label: 'Accounting',
+    shortLabel: 'Accounting',
+    description: 'Ledgers, journals, bookkeeping, financial statements & cost accounting',
+  },
+  {
+    id: 'finance',
+    label: 'Corporate Finance',
+    shortLabel: 'Corp Finance',
+    description: 'Financial analysis, ROI, DCF valuation, modeling & M&A',
+  },
+  {
+    id: 'markets',
+    label: 'Market Study',
+    shortLabel: 'Markets',
+    description: 'Competitive research, macroeconomic indicators & market risk',
+  },
+  {
+    id: 'foundations',
+    label: 'Foundations & Excel',
+    shortLabel: 'Foundations',
+    description: 'Business math, percentages, margins, interest & Excel data skills',
+  },
+];
 
 const LOCAL_STORAGE_KEY = 'memo_ledger_local_state_v1';
 
@@ -139,6 +187,20 @@ export default function App() {
   const [onlyOfflineSavedFilter, setOnlyOfflineSavedFilter] = useState(false);
   const [ladderSearchQuery, setLadderSearchQuery] = useState('');
   const [selectedSubtopicForCard, setSelectedSubtopicForCard] = useState<string>('');
+  const [selectedMajorFilter, setSelectedMajorFilter] = useState<MajorCurriculumFilter>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.learningTrack === 'accounting') return 'accounting';
+        if (parsed.learningTrack === 'finance') return 'finance';
+        if (parsed.learningTrack === 'markets') return 'markets';
+      }
+    } catch {
+      // fallback
+    }
+    return 'all';
+  });
 
   // Reference Drawer State (Triggered by clicking the tiny "R" in the corner of any card)
   const [activeReference, setActiveReference] = useState<ReferenceInfo | null>(null);
@@ -407,6 +469,38 @@ export default function App() {
     });
   };
 
+  const handleSelectMajorFilter = (filter: MajorCurriculumFilter) => {
+    setSelectedMajorFilter(filter);
+
+    let nextTrack: LearningTrack = 'general';
+    if (filter === 'accounting') nextTrack = 'accounting';
+    else if (filter === 'finance') nextTrack = 'finance';
+    else if (filter === 'markets') nextTrack = 'markets';
+    else nextTrack = 'general';
+
+    handleSelectTrack(nextTrack);
+
+    const matchingNodes = CURRICULUM_LADDER.filter((n) => {
+      if (filter === 'all') return true;
+      if (filter === 'foundations') return n.track === 'general';
+      return n.track === filter;
+    });
+
+    if (matchingNodes.length > 0) {
+      setSelectedRungId(matchingNodes[0].id);
+    }
+  };
+
+  const getFilterCounts = (filterId: MajorCurriculumFilter) => {
+    const nodes = CURRICULUM_LADDER.filter((n) => {
+      if (filterId === 'all') return true;
+      if (filterId === 'foundations') return n.track === 'general';
+      return n.track === filterId;
+    });
+    const topicCount = nodes.reduce((sum, n) => sum + (n.subtopics?.length || 0), 0);
+    return { levelCount: nodes.length, topicCount };
+  };
+
   const handleUpdateReminders = (enabled: boolean, time: string) => {
     setStudyState((prev) => {
       const nextState = {
@@ -424,7 +518,16 @@ export default function App() {
   ).length;
 
   const normalizedQuery = ladderSearchQuery.trim().toLowerCase();
-  const visibleLadderNodes = CURRICULUM_LADDER.filter((n) => {
+
+  // Major Filter (Button selection is the 1st / major filter)
+  const majorFilteredNodes = CURRICULUM_LADDER.filter((n) => {
+    if (selectedMajorFilter === 'all') return true;
+    if (selectedMajorFilter === 'foundations') return n.track === 'general';
+    return n.track === selectedMajorFilter;
+  });
+
+  // Second Filter (Search bar is the 2nd filter) + Offline Saved toggle
+  const visibleLadderNodes = majorFilteredNodes.filter((n) => {
     if (onlyOfflineSavedFilter && !studyState.savedTutorialIds.includes(n.id)) {
       return false;
     }
@@ -438,10 +541,32 @@ export default function App() {
     return inTitle || inSubtitle || inRule || inSubtopics;
   });
 
+  const totalSubtopicsCount = visibleLadderNodes.reduce(
+    (acc, node) => acc + (node.subtopics?.length || 0),
+    0
+  );
+
   const activeNode: LadderNode =
-    CURRICULUM_LADDER.find((n) => n.id === selectedRungId) ||
+    visibleLadderNodes.find((n) => n.id === selectedRungId) ||
     visibleLadderNodes[0] ||
     CURRICULUM_LADDER[0];
+
+  const getFilterSubtitle = () => {
+    let base = 'From Business Math & Ledgers to ROI, Valuation, M&A & Strategic Finance';
+    if (selectedMajorFilter === 'accounting') {
+      base = 'Filtered to Accounting: Ledgers, Journals, Bookkeeping, Financial Statements & Cost Controls';
+    } else if (selectedMajorFilter === 'finance') {
+      base = 'Filtered to Corporate Finance: Financial Analysis, ROI, DCF Valuation, Modeling & M&A';
+    } else if (selectedMajorFilter === 'markets') {
+      base = 'Filtered to Market Study: Competitive Research, Financial Markets & Strategic Risk';
+    } else if (selectedMajorFilter === 'foundations') {
+      base = 'Filtered to Foundations: Business Math, Percentages, Margins & Excel Financial Skills';
+    }
+    if (normalizedQuery) {
+      return `${base} · Matching "${ladderSearchQuery}"`;
+    }
+    return base;
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--bg-canvas)] text-[var(--text-primary)]">
@@ -620,28 +745,34 @@ export default function App() {
               <span className="text-xs font-medium text-[var(--text-muted)]">
                 Choose your focus path anytime:
               </span>
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-2">
-                {(
-                  [
-                    { id: 'general', label: 'General Path' },
-                    { id: 'accounting', label: 'Accounting' },
-                    { id: 'finance', label: 'Corporate Finance' },
-                    { id: 'markets', label: 'Market Study' },
-                  ] as { id: LearningTrack; label: string }[]
-                ).map((trackOption) => (
-                  <button
-                    key={trackOption.id}
-                    type="button"
-                    onClick={() => handleSelectTrack(trackOption.id)}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-medium transition-colors text-left border cursor-pointer whitespace-nowrap ${
-                      studyState.learningTrack === trackOption.id
-                        ? 'border-[#C86D3B] bg-[var(--bg-elevated)] text-[var(--text-primary)] font-semibold shadow-xs'
-                        : 'border-[var(--border-hairline)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                    }`}
-                  >
-                    {trackOption.label}
-                  </button>
-                ))}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">
+                {MAJOR_FILTER_OPTIONS.map((trackOption) => {
+                  const isSelected = selectedMajorFilter === trackOption.id;
+                  const { levelCount } = getFilterCounts(trackOption.id);
+                  return (
+                    <button
+                      key={trackOption.id}
+                      type="button"
+                      onClick={() => handleSelectMajorFilter(trackOption.id)}
+                      className={`px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left border cursor-pointer whitespace-nowrap flex items-center justify-between gap-2 ${
+                        isSelected
+                          ? 'border-[#C86D3B] bg-[var(--bg-elevated)] text-[var(--text-primary)] font-semibold shadow-xs'
+                          : 'border-[var(--border-hairline)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                      }`}
+                    >
+                      <span className="truncate">{trackOption.label}</span>
+                      <span
+                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                          isSelected
+                            ? 'bg-[#C86D3B] text-white'
+                            : 'bg-[var(--bg-surface)] text-[var(--text-muted)]'
+                        }`}
+                      >
+                        {levelCount}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -650,15 +781,18 @@ export default function App() {
         {/* Tab 1: Progressive Study Ladder (Prime Cost -> Three Financial Statements -> Complex Triage) */}
         {activeTab === 'ladder' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* Left 5 Columns: The 16-Level Progress Ladder */}
+            {/* Left 5 Columns: The Dynamic X-Level Progress Ladder */}
             <div className="lg:col-span-5 space-y-4">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-start justify-between gap-2">
                 <div>
-                  <h2 className="font-display text-lg font-semibold text-[var(--text-primary)]">
-                    Complete 16-Level Curriculum
+                  <h2 className="font-display text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2 flex-wrap">
+                    <span>Complete {visibleLadderNodes.length}-Level Curriculum</span>
+                    <span className="text-xs font-mono font-medium text-[#C86D3B] px-2.5 py-0.5 rounded-full bg-[#C86D3B]/10 border border-[#C86D3B]/20">
+                      {totalSubtopicsCount} {totalSubtopicsCount === 1 ? 'Topic' : 'Topics'} Related
+                    </span>
                   </h2>
-                  <p className="text-xs text-[var(--text-secondary)]">
-                    From Business Math & Ledgers to ROI, Valuation, M&A & Strategic Finance
+                  <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                    {getFilterSubtitle()}
                   </p>
                 </div>
 
@@ -675,125 +809,246 @@ export default function App() {
                   <span>
                     {onlyOfflineSavedFilter
                       ? `Saved (${studyState.savedTutorialIds.length})`
-                      : 'All 16 Levels'}
+                      : 'Saved Only'}
                   </span>
                 </button>
               </div>
 
-              {/* Instant Topic Search Bar across all 16 Levels & 250+ Subtopics */}
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-[var(--text-muted)] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={ladderSearchQuery}
-                  onChange={(e) => setLadderSearchQuery(e.target.value)}
-                  placeholder="Search 250+ topics (e.g., ROI, DuPont, T-accounts, XLOOKUP, LBO)..."
-                  className="w-full rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-surface)] pl-9 pr-8 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-2 focus:outline-[#C86D3B]"
-                />
-                {ladderSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setLadderSearchQuery('')}
-                    aria-label="Clear search"
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
+              {/* 1. Major Filter (Domain Selection Buttons) */}
+              <div className="rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-surface)] p-3 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-[var(--text-primary)] flex items-center gap-1.5">
+                    <Filter className="w-3.5 h-3.5 text-[#C86D3B]" />
+                    <span>Major Filter: Select Domain</span>
+                  </span>
+                  {selectedMajorFilter !== 'all' && (
+                    <button
+                      type="button"
+                      onClick={() => handleSelectMajorFilter('all')}
+                      className="text-[11px] text-[#C86D3B] hover:underline cursor-pointer font-medium"
+                    >
+                      Reset to All (16 Levels)
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {MAJOR_FILTER_OPTIONS.map((opt) => {
+                    const isSelected = selectedMajorFilter === opt.id;
+                    const { levelCount, topicCount } = getFilterCounts(opt.id);
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => handleSelectMajorFilter(opt.id)}
+                        title={`${opt.description} (${topicCount} topics)`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-[#C86D3B] text-white shadow-xs font-semibold'
+                            : 'bg-[var(--bg-canvas)] text-[var(--text-secondary)] border border-[var(--border-hairline)] hover:text-[var(--text-primary)] hover:border-[#C86D3B]/40'
+                        }`}
+                      >
+                        <span>{opt.label}</span>
+                        <span
+                          className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                            isSelected
+                              ? 'bg-black/25 text-white'
+                              : 'bg-[var(--bg-surface)] text-[var(--text-muted)]'
+                          }`}
+                        >
+                          {levelCount}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 2. Second Filter: Search Bar across Topics */}
+              <div className="space-y-1">
+                <div className="text-[11px] text-[var(--text-muted)] font-medium flex items-center justify-between">
+                  <span>Second Filter: Refine by Keyword</span>
+                  {ladderSearchQuery && (
+                    <span className="text-[#C86D3B] font-mono">
+                      {visibleLadderNodes.length} {visibleLadderNodes.length === 1 ? 'level' : 'levels'} matched
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-[var(--text-muted)] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={ladderSearchQuery}
+                    onChange={(e) => setLadderSearchQuery(e.target.value)}
+                    placeholder={
+                      selectedMajorFilter === 'all'
+                        ? 'Search 250+ topics across all 16 levels (e.g., ROI, DuPont, T-accounts, XLOOKUP, LBO)...'
+                        : `Search within ${visibleLadderNodes.length} ${selectedMajorFilter} levels (${totalSubtopicsCount} topics)...`
+                    }
+                    className="w-full rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-surface)] pl-9 pr-8 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-2 focus:outline-[#C86D3B]"
+                  />
+                  {ladderSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setLadderSearchQuery('')}
+                      aria-label="Clear search"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-3 max-h-[780px] overflow-y-auto pr-1">
-                {visibleLadderNodes.map((node) => {
-                  const isSelected = node.id === activeNode.id;
-                  const isCompleted = studyState.completedNodeIds.includes(node.id);
-                  const isSavedOffline = studyState.savedTutorialIds.includes(node.id);
-                  const matchesTrack =
-                    studyState.learningTrack === 'general' ||
-                    node.track === studyState.learningTrack ||
-                    node.track === 'general';
+                {visibleLadderNodes.length === 0 ? (
+                  <div className="rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-surface)] p-8 text-center space-y-3">
+                    <MemoOwl mood="thinking" size="md" />
+                    <h3 className="font-display text-base font-semibold text-[var(--text-primary)]">
+                      No levels found matching your filters
+                    </h3>
+                    <p className="text-xs text-[var(--text-secondary)] max-w-sm mx-auto">
+                      No levels in this domain match &ldquo;{ladderSearchQuery}&rdquo;. Try clearing your search keyword or switching domain buttons.
+                    </p>
+                    <div className="flex justify-center gap-2 pt-2">
+                      {ladderSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setLadderSearchQuery('')}
+                          className="rounded-lg bg-[#C86D3B] text-white px-3 py-1.5 text-xs font-semibold cursor-pointer"
+                        >
+                          Clear Search
+                        </button>
+                      )}
+                      {selectedMajorFilter !== 'all' && (
+                        <button
+                          type="button"
+                          onClick={() => handleSelectMajorFilter('all')}
+                          className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-elevated)] text-[var(--text-primary)] px-3 py-1.5 text-xs font-medium cursor-pointer"
+                        >
+                          Show All 16 Levels
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  visibleLadderNodes.map((node) => {
+                    const isSelected = node.id === activeNode.id;
+                    const isCompleted = studyState.completedNodeIds.includes(node.id);
+                    const isSavedOffline = studyState.savedTutorialIds.includes(node.id);
+                    const matchesTrack =
+                      studyState.learningTrack === 'general' ||
+                      node.track === studyState.learningTrack ||
+                      node.track === 'general';
 
-                  return (
-                    <div
-                      key={node.id}
-                      onClick={() => setSelectedRungId(node.id)}
-                      className={`relative rounded-2xl border p-5 transition-colors cursor-pointer ${
-                        isSelected
-                          ? 'border-[#C86D3B] bg-[var(--bg-elevated)] shadow-xs'
-                          : 'border-[var(--border-hairline)] bg-[var(--bg-surface)]/70 hover:bg-[var(--bg-elevated)]'
-                      }`}
-                    >
-                      {/* Tiny, almost transparent "R" in the very corner */}
-                      <ReferenceCornerBadge
-                        reference={node.reference}
-                        onSelect={setActiveReference}
-                      />
+                    // Reorder subtopics if search query is active so matching topics appear first
+                    const matchingSubtopics = (node.subtopics || []).filter((st) =>
+                      normalizedQuery ? st.toLowerCase().includes(normalizedQuery) : false
+                    );
+                    const nonMatchingSubtopics = (node.subtopics || []).filter((st) =>
+                      normalizedQuery ? !st.toLowerCase().includes(normalizedQuery) : true
+                    );
+                    const displaySubtopics = normalizedQuery
+                      ? [...matchingSubtopics, ...nonMatchingSubtopics]
+                      : (node.subtopics || []);
 
-                      <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] pr-6">
-                        <span className="font-mono font-semibold text-[#C86D3B]">
-                          Level {String(node.rungNumber).padStart(2, '0')}
-                        </span>
-                        <span aria-hidden="true">·</span>
-                        <span className="capitalize">{node.track}</span>
-                        <span aria-hidden="true">·</span>
-                        <span>{node.subtopics?.length || 12} topics</span>
-                        {matchesTrack && studyState.learningTrack !== 'general' && (
-                          <>
-                            <span aria-hidden="true">·</span>
-                            <span className="text-[#2E6F40] dark:text-[#4CA965] font-medium">
-                              Your Track
-                            </span>
-                          </>
+                    return (
+                      <div
+                        key={node.id}
+                        onClick={() => setSelectedRungId(node.id)}
+                        className={`relative rounded-2xl border p-5 transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'border-[#C86D3B] bg-[var(--bg-elevated)] shadow-xs'
+                            : 'border-[var(--border-hairline)] bg-[var(--bg-surface)]/70 hover:bg-[var(--bg-elevated)]'
+                        }`}
+                      >
+                        {/* Tiny, almost transparent "R" in the very corner */}
+                        <ReferenceCornerBadge
+                          reference={node.reference}
+                          onSelect={setActiveReference}
+                        />
+
+                        <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] pr-6">
+                          <span className="font-mono font-semibold text-[#C86D3B]">
+                            Level {String(node.rungNumber).padStart(2, '0')}
+                          </span>
+                          <span aria-hidden="true">·</span>
+                          <span className="capitalize">{node.track}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{node.subtopics?.length || 12} topics</span>
+                          {matchesTrack && studyState.learningTrack !== 'general' && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span className="text-[#2E6F40] dark:text-[#4CA965] font-medium">
+                                Selected Track
+                              </span>
+                            </>
+                          )}
+                        </div>
+
+                        <h3 className="mt-1.5 font-display text-base font-semibold text-[var(--text-primary)]">
+                          {node.title}
+                        </h3>
+                        <p className="mt-1 text-xs text-[var(--text-secondary)] leading-relaxed">
+                          {node.subtitle}
+                        </p>
+
+                        {displaySubtopics && displaySubtopics.length > 0 && (
+                          <div className="mt-2.5 flex flex-wrap gap-1">
+                            {displaySubtopics.slice(0, 5).map((topic, tIdx) => {
+                              const isMatch =
+                                normalizedQuery &&
+                                topic.toLowerCase().includes(normalizedQuery);
+                              return (
+                                <span
+                                  key={tIdx}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedSubtopicForCard(topic);
+                                    setActiveTab('flashcards');
+                                  }}
+                                  title="Click to generate an AI flashcard for this topic"
+                                  className={`rounded-md border px-2 py-0.5 text-[11px] transition-colors hover:border-[#C86D3B] ${
+                                    isMatch
+                                      ? 'bg-[#C86D3B]/15 border-[#C86D3B]/40 text-[#C86D3B] font-medium'
+                                      : 'bg-[var(--bg-canvas)] border-[var(--border-hairline)] text-[var(--text-secondary)]'
+                                  }`}
+                                >
+                                  {topic}
+                                </span>
+                              );
+                            })}
+                            {displaySubtopics.length > 5 && (
+                              <span className="px-1.5 py-0.5 text-[11px] font-mono text-[#C86D3B]">
+                                +{displaySubtopics.length - 5} more
+                              </span>
+                            )}
+                          </div>
                         )}
-                      </div>
 
-                      <h3 className="mt-1.5 font-display text-base font-semibold text-[var(--text-primary)]">
-                        {node.title}
-                      </h3>
-                      <p className="mt-1 text-xs text-[var(--text-secondary)] leading-relaxed">
-                        {node.subtitle}
-                      </p>
+                        <div className="mt-3 pt-2.5 border-t border-[var(--border-hairline)] flex items-center justify-between text-xs text-[var(--text-muted)]">
+                          <span className="flex items-center gap-1.5">
+                            {isCompleted ? (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5 text-[#2E6F40] dark:text-[#4CA965]" />
+                                <span className="text-[#2E6F40] dark:text-[#4CA965] font-medium">
+                                  Completed
+                                </span>
+                              </>
+                            ) : (
+                              <span>In Progress</span>
+                            )}
+                          </span>
 
-                      {node.subtopics && node.subtopics.length > 0 && (
-                        <div className="mt-2.5 flex flex-wrap gap-1">
-                          {node.subtopics.slice(0, 4).map((topic, tIdx) => (
-                            <span
-                              key={tIdx}
-                              className="rounded-md bg-[var(--bg-canvas)] border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]"
-                            >
-                              {topic}
-                            </span>
-                          ))}
-                          {node.subtopics.length > 4 && (
-                            <span className="px-1.5 py-0.5 text-[11px] font-mono text-[#C86D3B]">
-                              +{node.subtopics.length - 4} more
+                          {isSavedOffline && (
+                            <span className="font-mono text-[11px] text-[var(--text-secondary)]">
+                              Saved Offline
                             </span>
                           )}
                         </div>
-                      )}
-
-                      <div className="mt-3 pt-2.5 border-t border-[var(--border-hairline)] flex items-center justify-between text-xs text-[var(--text-muted)]">
-                        <span className="flex items-center gap-1.5">
-                          {isCompleted ? (
-                            <>
-                              <CheckCircle2 className="w-3.5 h-3.5 text-[#2E6F40] dark:text-[#4CA965]" />
-                              <span className="text-[#2E6F40] dark:text-[#4CA965] font-medium">
-                                Completed
-                              </span>
-                            </>
-                          ) : (
-                            <span>In Progress</span>
-                          )}
-                        </span>
-
-                        {isSavedOffline && (
-                          <span className="font-mono text-[11px] text-[var(--text-secondary)]">
-                            Saved Offline
-                          </span>
-                        )}
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
 
@@ -813,6 +1068,8 @@ export default function App() {
                       Level {String(activeNode.rungNumber).padStart(2, '0')} of{' '}
                       {CURRICULUM_LADDER.length}
                     </span>
+                    <span aria-hidden="true">·</span>
+                    <span className="capitalize font-medium">{activeNode.track}</span>
                     <span aria-hidden="true">·</span>
                     <span>{activeNode.difficulty}</span>
                     <span aria-hidden="true">·</span>
@@ -859,25 +1116,34 @@ export default function App() {
                       </span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {activeNode.subtopics.map((topic, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => {
-                            setSelectedSubtopicForCard(topic);
-                            setActiveTab('flashcards');
-                          }}
-                          className="flex items-center justify-between gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-3 py-2 text-left text-xs text-[var(--text-primary)] hover:border-[#C86D3B] transition-colors cursor-pointer"
-                        >
-                          <span className="truncate">
-                            <span className="font-mono text-[11px] text-[#C86D3B] mr-1.5">
-                              {String(idx + 1).padStart(2, '0')}.
+                      {activeNode.subtopics.map((topic, idx) => {
+                        const isMatch =
+                          normalizedQuery &&
+                          topic.toLowerCase().includes(normalizedQuery);
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              setSelectedSubtopicForCard(topic);
+                              setActiveTab('flashcards');
+                            }}
+                            className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors cursor-pointer ${
+                              isMatch
+                                ? 'border-[#C86D3B] bg-[#C86D3B]/10 text-[var(--text-primary)] font-medium shadow-xs'
+                                : 'border-[var(--border-hairline)] bg-[var(--bg-elevated)] text-[var(--text-primary)] hover:border-[#C86D3B]'
+                            }`}
+                          >
+                            <span className="truncate">
+                              <span className="font-mono text-[11px] text-[#C86D3B] mr-1.5">
+                                {String(idx + 1).padStart(2, '0')}.
+                              </span>
+                              {topic}
                             </span>
-                            {topic}
-                          </span>
-                          <ArrowRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                        </button>
-                      ))}
+                            <ArrowRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
